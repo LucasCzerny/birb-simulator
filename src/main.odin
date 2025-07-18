@@ -2,6 +2,7 @@ package birb
 
 import "core:log"
 import "core:mem"
+import "core:thread"
 
 import "shared:svk"
 
@@ -42,12 +43,13 @@ main :: proc() {
 	draw_ctx := svk.create_draw_context(ctx, MAX_FRAMES_IN_FLIGHT)
 
 	data := Render_Data {
-		camera             = create_camera(ctx),
-		camera_descriptors = create_camera_descriptors(ctx),
-		camera_buffers     = create_camera_buffers(ctx),
+		camera               = create_camera(ctx),
+		camera_descriptors   = create_camera_descriptors(ctx),
+		camera_buffers       = create_camera_buffers(ctx),
+		ctx                  = &ctx,
+		center_coords        = {0, 0},
+		update_chunks_thread = thread.create(update_chunks_worker),
 	}
-
-	data.meshes = init_visible_chunks(ctx, data.camera.position)
 
 	for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
 		svk.update_descriptor_set(
@@ -62,6 +64,11 @@ main :: proc() {
 
 	data.pipeline = create_pipeline(ctx, data)
 	context.user_ptr = &data
+	data.update_chunks_thread.init_context = context
+
+	data._first_frame = true
+	thread.start(data.update_chunks_thread)
+	data._first_frame = false
 
 	for !glfw.WindowShouldClose(ctx.window.handle) {
 		svk.wait_until_frame_is_done(ctx, draw_ctx)
@@ -74,7 +81,16 @@ main :: proc() {
 			}
 		}
 
-		data.meshes = update_visible_chunks(ctx, data.camera.position, &data.meshes)
+		center_coords := [2]int {
+			int(data.camera.position.x / 240.0),
+			int(data.camera.position.z / 240.0),
+		}
+
+		if center_coords != data.center_coords {
+			data._prev_center_coords = data.center_coords
+			data.center_coords = center_coords
+			thread.start(data.update_chunks_thread)
+		}
 
 		svk.draw(&ctx, &draw_ctx, &data.pipeline)
 

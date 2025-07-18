@@ -1,15 +1,25 @@
 package birb
 
+import "core:thread"
+
 import vk "vendor:vulkan"
 
 import "shared:svk"
 
 Render_Data :: struct {
-	pipeline:           svk.Pipeline,
-	meshes:             [9]Mesh,
-	camera:             Camera,
-	camera_buffers:     [MAX_FRAMES_IN_FLIGHT]svk.Buffer,
-	camera_descriptors: svk.Descriptor_Group,
+	pipeline:             svk.Pipeline,
+	camera:               Camera,
+	camera_buffers:       [MAX_FRAMES_IN_FLIGHT]svk.Buffer,
+	camera_descriptors:   svk.Descriptor_Group,
+	//
+	ctx:                  ^svk.Context,
+	meshes:               [N][N]Mesh,
+	pregenerated_meshes:  [N][N]Mesh,
+	center_coords:        [2]int,
+	update_chunks_thread: ^thread.Thread,
+	//
+	_first_frame:         bool,
+	_prev_center_coords:  [2]int,
 }
 
 create_pipeline :: proc(ctx: svk.Context, data: Render_Data) -> svk.Pipeline {

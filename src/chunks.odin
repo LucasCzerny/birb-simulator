@@ -1,90 +1,98 @@
 package birb
 
-import "core:log"
-_ :: log
+import "core:thread"
 
 import "shared:svk"
 
 VIEW_DISTANCE :: 1
-NR_CHUNKS :: (1 + 2 * VIEW_DISTANCE) * (1 + 2 * VIEW_DISTANCE)
+CHUNKS_PER_ROW :: 1 + 2 * VIEW_DISTANCE // also per column cuz thats how squares work
+N :: CHUNKS_PER_ROW
 
-init_visible_chunks :: proc(ctx: svk.Context, position: [3]f32) -> (meshes: [9]Mesh) {
-	chunk_x := cast(int)position.x / cast(int)CHUNK_SIZE
-	chunk_y := cast(int)position.z / cast(int)CHUNK_SIZE
-	chunk_coords := [2]int{chunk_x, chunk_y}
+update_chunks_worker :: proc(_: ^thread.Thread) {
+	data := cast(^Render_Data)context.user_ptr
 
-	index := 0
-	offsets := [3]int{0, -1, 1}
-
-	for y_offset in offsets {
-		for x_offset in offsets {
-			offset := [2]int{x_offset, y_offset}
-			meshes[index] = generate_chunk_mesh(ctx, 1, chunk_coords + offset)
-
-			index += 1
-		}
-	}
-
-	return meshes
+	update_current_chunks(data)
+	generate_future_chunks(data)
 }
 
-update_visible_chunks :: proc(
-	ctx: svk.Context,
-	position: [3]f32,
-	prev_chunk_meshes: ^[9]Mesh,
-) -> (
-	meshes: [9]Mesh,
-) {
-	chunk_x := cast(int)position.x / cast(int)CHUNK_SIZE
-	chunk_y := cast(int)position.z / cast(int)CHUNK_SIZE
-	chunk_coords := [2]int{chunk_x, chunk_y}
+update_current_chunks :: proc(data: ^Render_Data) {
+	meshes: [N][N]Mesh
 
-	index := 0
 	offsets := [3]int{0, -1, 1}
+	levels_of_detail := [7]u32{1, 2, 4, 6, 8, 10, 12}
 
-	prev_center_chunk := prev_chunk_meshes[0].chunk_coords
+	prev_offset := data.center_coords - data._prev_center_coords
 
-	if prev_center_chunk == chunk_coords {
-		return prev_chunk_meshes^
+	for y_offset in offsets {
+		for x_offset in offsets {
+			max_offset := max(abs(x_offset), abs(y_offset))
+			lod := levels_of_detail[max_offset]
+
+			offset := [2]int{x_offset, y_offset}
+			current_prev_offset := prev_offset + offset
+			prev := current_prev_offset
+
+			prev_mesh := &data.meshes[prev.y][prev.x]
+			pregenerated_mesh := &data.pregenerated_meshes[prev.y][prev.x]
+
+			new_mesh := &meshes[offset.y][offset.x]
+
+			if lod == prev_mesh.lod && !data._first_frame {
+				new_mesh^ = prev_mesh^
+				prev_mesh._was_copied = true
+			} else if lod == pregenerated_mesh.lod && !data._first_frame {
+				new_mesh^ = pregenerated_mesh^
+				pregenerated_mesh._was_copied = true
+			} else {
+				new_mesh^ = generate_chunk_mesh(data.ctx^, lod, data.center_coords + offset)
+			}
+		}
 	}
 
-	distance_to_prev := chunk_coords - prev_center_chunk
+	prev_meshes := data.meshes
+	data.meshes = meshes
+
+	for &row in prev_meshes {
+		for &mesh in row {
+			if mesh._was_copied {continue}
+			destroy_mesh_buffers(data.ctx^, mesh)
+		}
+	}
+
+	for &row in data.pregenerated_meshes {
+		for &mesh in row {
+			if mesh._was_copied {continue}
+			destroy_mesh_buffers(data.ctx^, mesh)
+		}
+	}
+
+	data.meshes = meshes
+}
+
+generate_future_chunks :: proc(data: ^Render_Data) {
+	offsets := [3]int{0, -1, 1}
+	// levels_of_detail := [7]u32{1, 2, 4, 6, 8, 10, 12}
 
 	for y_offset in offsets {
 		for x_offset in offsets {
 			offset := [2]int{x_offset, y_offset}
-			prev_offset := distance_to_prev + offset
+			mesh := &data.meshes[offset.y][offset.x]
 
-			if abs(prev_offset.x) <= 1 && abs(prev_offset.y) <= 1 {
-				y_index := 0
-				if prev_offset.y == -1 {
-					y_index = 1
-				} else if prev_offset.y == 1 {
-					y_index = 2
-				}
-
-				x_index := 0
-				if prev_offset.x == -1 {
-					x_index = 1
-				} else if prev_offset.x == 1 {
-					x_index = 2
-				}
-
-				prev_mesh_index := 3 * y_index + x_index
-				meshes[index] = prev_chunk_meshes[prev_mesh_index]
-				prev_chunk_meshes[prev_mesh_index]._was_copied = true
-			} else {
-				meshes[index] = generate_chunk_mesh(ctx, 1, chunk_coords + offset)
+			pregenerated_lod: u32
+			switch mesh.lod {
+			case 1:
+				pregenerated_lod = 2
+			case 2:
+				pregenerated_lod = 1
+			case 4, 6, 8, 10, 12:
+				pregenerated_lod = mesh.lod - 2
 			}
 
-			index += 1
+			data.pregenerated_meshes[offset.y][offset.x] = generate_chunk_mesh(
+				data.ctx^,
+				pregenerated_lod,
+				data.center_coords + offset,
+			)
 		}
 	}
-
-	for mesh in prev_chunk_meshes {
-		if mesh._was_copied {continue}
-		destroy_mesh_buffers(ctx, mesh)
-	}
-
-	return meshes
 }
