@@ -1,14 +1,10 @@
 package birb
 
-import "core:thread"
-
-import "shared:svk"
-
 VIEW_DISTANCE :: 1
 CHUNKS_PER_ROW :: 1 + 2 * VIEW_DISTANCE // also per column cuz thats how squares work
 N :: CHUNKS_PER_ROW
 
-update_chunks_worker :: proc(_: ^thread.Thread) {
+update_chunks_worker :: proc() {
 	data := cast(^Render_Data)context.user_ptr
 
 	update_current_chunks(data)
@@ -29,13 +25,23 @@ update_current_chunks :: proc(data: ^Render_Data) {
 			lod := levels_of_detail[max_offset]
 
 			offset := [2]int{x_offset, y_offset}
+			current_index := offset + {VIEW_DISTANCE, VIEW_DISTANCE}
+
+			new_mesh := &meshes[current_index.y][current_index.x]
+
 			current_prev_offset := prev_offset + offset
-			prev := current_prev_offset
+			prev_max_offset := max(abs(current_prev_offset.x), abs(current_prev_offset.y))
 
-			prev_mesh := &data.meshes[prev.y][prev.x]
-			pregenerated_mesh := &data.pregenerated_meshes[prev.y][prev.x]
+			// TODO: scuffed af
+			if prev_max_offset >= VIEW_DISTANCE {
+				new_mesh^ = generate_chunk_mesh(data.ctx^, lod, data.center_coords + offset)
+				continue
+			}
 
-			new_mesh := &meshes[offset.y][offset.x]
+			prev_index := current_prev_offset + {VIEW_DISTANCE, VIEW_DISTANCE}
+
+			prev_mesh := &data.meshes[prev_index.y][prev_index.x]
+			pregenerated_mesh := &data.pregenerated_meshes[prev_index.y][prev_index.x]
 
 			if lod == prev_mesh.lod && !data._first_frame {
 				new_mesh^ = prev_mesh^
@@ -76,7 +82,8 @@ generate_future_chunks :: proc(data: ^Render_Data) {
 	for y_offset in offsets {
 		for x_offset in offsets {
 			offset := [2]int{x_offset, y_offset}
-			mesh := &data.meshes[offset.y][offset.x]
+			index := offset + {VIEW_DISTANCE, VIEW_DISTANCE}
+			mesh := &data.meshes[index.y][index.x]
 
 			pregenerated_lod: u32
 			switch mesh.lod {
@@ -88,7 +95,7 @@ generate_future_chunks :: proc(data: ^Render_Data) {
 				pregenerated_lod = mesh.lod - 2
 			}
 
-			data.pregenerated_meshes[offset.y][offset.x] = generate_chunk_mesh(
+			data.pregenerated_meshes[index.y][index.x] = generate_chunk_mesh(
 				data.ctx^,
 				pregenerated_lod,
 				data.center_coords + offset,

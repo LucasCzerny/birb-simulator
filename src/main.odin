@@ -1,6 +1,7 @@
 package birb
 
 import "core:log"
+import "core:math"
 import "core:mem"
 import "core:thread"
 
@@ -43,12 +44,11 @@ main :: proc() {
 	draw_ctx := svk.create_draw_context(ctx, MAX_FRAMES_IN_FLIGHT)
 
 	data := Render_Data {
-		camera               = create_camera(ctx),
-		camera_descriptors   = create_camera_descriptors(ctx),
-		camera_buffers       = create_camera_buffers(ctx),
-		ctx                  = &ctx,
-		center_coords        = {0, 0},
-		update_chunks_thread = thread.create(update_chunks_worker),
+		camera             = create_camera(ctx),
+		camera_descriptors = create_camera_descriptors(ctx),
+		camera_buffers     = create_camera_buffers(ctx),
+		ctx                = &ctx,
+		center_coords      = {0, 0},
 	}
 
 	for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
@@ -64,10 +64,9 @@ main :: proc() {
 
 	data.pipeline = create_pipeline(ctx, data)
 	context.user_ptr = &data
-	data.update_chunks_thread.init_context = context
 
 	data._first_frame = true
-	thread.start(data.update_chunks_thread)
+	invoke_chunks_thread()
 	data._first_frame = false
 
 	for !glfw.WindowShouldClose(ctx.window.handle) {
@@ -82,14 +81,16 @@ main :: proc() {
 		}
 
 		center_coords := [2]int {
-			int(data.camera.position.x / 240.0),
-			int(data.camera.position.z / 240.0),
+			cast(int)math.floor(data.camera.position.x / 240.0),
+			cast(int)math.floor(data.camera.position.z / 240.0),
 		}
 
 		if center_coords != data.center_coords {
+			log.info("starting with", center_coords)
 			data._prev_center_coords = data.center_coords
 			data.center_coords = center_coords
-			thread.start(data.update_chunks_thread)
+
+			invoke_chunks_thread()
 		}
 
 		svk.draw(&ctx, &draw_ctx, &data.pipeline)
@@ -102,8 +103,16 @@ main :: proc() {
 	svk.destroy_graphics_pipeline(ctx, data.pipeline)
 	svk.destroy_descriptor_group_layout(ctx, data.camera_descriptors)
 
-	for mesh in data.meshes {
-		destroy_mesh_buffers(ctx, mesh)
+	for &row in data.meshes {
+		for &mesh in row {
+			destroy_mesh_buffers(ctx, mesh)
+		}
+	}
+
+	for &row in data.pregenerated_meshes {
+		for &mesh in row {
+			destroy_mesh_buffers(ctx, mesh)
+		}
 	}
 
 	for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
@@ -113,6 +122,10 @@ main :: proc() {
 
 	svk.destroy_context(ctx)
 	svk.destroy_draw_context(ctx, draw_ctx)
+}
+
+invoke_chunks_thread :: proc() {
+	thread.create_and_start(update_chunks_worker, context, .Normal, true)
 }
 
 create_context :: proc() -> svk.Context {

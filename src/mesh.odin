@@ -31,7 +31,20 @@ generate_chunk_mesh :: proc(ctx: svk.Context, lod: u32, chunk_coords: [2]int) ->
 
 	// last loop iteration doesn't generate a triangle -> size of mesh is CHUNK_SIZE
 	width, height: u32 = CHUNK_SIZE + 1, CHUNK_SIZE + 1
-	height_map := generate_height_map(width, height, 69420, 40, 3, 0.5, 1)
+	shift := cast(int)CHUNK_SIZE / 2
+
+	height_map := generate_height_map(
+		width,
+		height,
+		seed = 69420,
+		offset = shift * chunk_coords,
+		zoom = 500,
+		octaves = 5,
+		persistance = 0.4,
+		lacunarity = 2.2,
+		height_multiplier = 50,
+	)
+
 	defer delete(height_map)
 
 	vertices_per_line := (CHUNK_SIZE) / lod + 1
@@ -138,9 +151,11 @@ create_mesh_buffers :: proc(
 generate_height_map :: proc(
 	width, height: u32,
 	seed: i64,
+	offset: [2]int,
 	zoom: f32,
 	octaves: u32,
 	persistance, lacunarity: f32,
+	height_multiplier: f32,
 ) -> [][]f32 {
 	log.assert(width > 1 && height > 1, "Height map must be at least 1x1")
 	log.assert(zoom > 0, "Zoom must be positive")
@@ -160,8 +175,8 @@ generate_height_map :: proc(
 			noise_height: f32 = 0
 
 			for _ in 0 ..< octaves {
-				sample_x := f32(x - int(center_x)) * frequency
-				sample_y := f32(y - int(center_y)) * frequency
+				sample_x := f32(x - int(center_x) + offset.x) * frequency
+				sample_y := f32(y - int(center_y) + offset.y) * frequency
 				sample := [2]f64{f64(sample_x) / f64(zoom), f64(sample_y) / f64(zoom)}
 
 				perlin := noise.noise_2d(seed, sample)
@@ -171,10 +186,9 @@ generate_height_map :: proc(
 				frequency *= lacunarity
 			}
 
-			value = noise_height
+			value = height_multiplier * noise_height
 		}
 	}
 
 	return height_map
 }
-

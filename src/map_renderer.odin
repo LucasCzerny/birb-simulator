@@ -1,25 +1,22 @@
 package birb
 
-import "core:thread"
-
 import vk "vendor:vulkan"
 
 import "shared:svk"
 
 Render_Data :: struct {
-	pipeline:             svk.Pipeline,
-	camera:               Camera,
-	camera_buffers:       [MAX_FRAMES_IN_FLIGHT]svk.Buffer,
-	camera_descriptors:   svk.Descriptor_Group,
+	pipeline:            svk.Pipeline,
+	camera:              Camera,
+	camera_buffers:      [MAX_FRAMES_IN_FLIGHT]svk.Buffer,
+	camera_descriptors:  svk.Descriptor_Group,
 	//
-	ctx:                  ^svk.Context,
-	meshes:               [N][N]Mesh,
-	pregenerated_meshes:  [N][N]Mesh,
-	center_coords:        [2]int,
-	update_chunks_thread: ^thread.Thread,
+	ctx:                 ^svk.Context,
+	meshes:              [N][N]Mesh,
+	pregenerated_meshes: [N][N]Mesh,
+	center_coords:       [2]int,
 	//
-	_first_frame:         bool,
-	_prev_center_coords:  [2]int,
+	_first_frame:        bool,
+	_prev_center_coords: [2]int,
 }
 
 create_pipeline :: proc(ctx: svk.Context, data: Render_Data) -> svk.Pipeline {
@@ -172,25 +169,31 @@ record_map_rendering :: proc(
 
 	offset: vk.DeviceSize = 0
 
-	for &mesh in data.meshes {
-		offsets_and_lod := [3]f32 {
-			cast(f32)mesh.chunk_coords.x * 240,
-			cast(f32)mesh.chunk_coords.y * 240,
-			cast(f32)mesh.lod,
+	for &row in data.meshes {
+		for &mesh in row {
+			if mesh.vertex_buffer.handle == 0 {
+				continue
+			}
+
+			offsets_and_lod := [3]f32 {
+				cast(f32)mesh.chunk_coords.x * 240,
+				cast(f32)mesh.chunk_coords.y * 240,
+				cast(f32)mesh.lod,
+			}
+
+			vk.CmdPushConstants(
+				command_buffer,
+				pipeline.layout,
+				{.VERTEX},
+				0,
+				3 * size_of(f32),
+				raw_data(offsets_and_lod[:]),
+			)
+
+			vk.CmdBindVertexBuffers(command_buffer, 0, 1, &mesh.vertex_buffer.handle, &offset)
+			vk.CmdBindIndexBuffer(command_buffer, mesh.index_buffer.handle, offset, .UINT32)
+
+			vk.CmdDrawIndexed(command_buffer, mesh.index_buffer.count * 3, 1, 0, 0, 0)
 		}
-
-		vk.CmdPushConstants(
-			command_buffer,
-			pipeline.layout,
-			{.VERTEX},
-			0,
-			3 * size_of(f32),
-			raw_data(offsets_and_lod[:]),
-		)
-
-		vk.CmdBindVertexBuffers(command_buffer, 0, 1, &mesh.vertex_buffer.handle, &offset)
-		vk.CmdBindIndexBuffer(command_buffer, mesh.index_buffer.handle, offset, .UINT32)
-
-		vk.CmdDrawIndexed(command_buffer, mesh.index_buffer.count * 3, 1, 0, 0, 0)
 	}
 }
