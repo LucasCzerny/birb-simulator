@@ -23,7 +23,7 @@ Vertex :: struct {
 	normal:   [3]f32,
 }
 
-generate_chunk_mesh :: proc(ctx: svk.Context, lod: u32, chunk_coords: [2]int) -> Mesh {
+generate_chunk_mesh :: proc(temp_ctx: svk.Context, lod: u32, chunk_coords: [2]int) -> Mesh {
 	log.assert(
 		lod == 1 || lod == 2 || lod == 4 || lod == 6 || lod == 8 || lod == 10 || lod == 12,
 		"Invalid value for lod",
@@ -31,13 +31,12 @@ generate_chunk_mesh :: proc(ctx: svk.Context, lod: u32, chunk_coords: [2]int) ->
 
 	// last loop iteration doesn't generate a triangle -> size of mesh is CHUNK_SIZE
 	width, height: u32 = CHUNK_SIZE + 1, CHUNK_SIZE + 1
-	shift := cast(int)CHUNK_SIZE / 2
 
 	height_map := generate_height_map(
 		width,
 		height,
 		seed = 69420,
-		offset = shift * chunk_coords,
+		offset = cast(int)CHUNK_SIZE * chunk_coords,
 		zoom = 500,
 		octaves = 5,
 		persistance = 0.4,
@@ -105,28 +104,29 @@ generate_chunk_mesh :: proc(ctx: svk.Context, lod: u32, chunk_coords: [2]int) ->
 	log.assert(current_vertex == cast(u32)len(vertices), "Your math is wrong lmaooo")
 	log.assert(current_index == cast(u32)len(indices), "Your math is wrong lmaooo")
 
-	mesh := create_mesh_buffers(ctx, vertices, indices)
+	mesh := create_mesh_buffers(temp_ctx, vertices, indices)
 	mesh.lod = lod
 	mesh.chunk_coords = chunk_coords
 
 	return mesh
 }
 
-destroy_mesh_buffers :: proc(ctx: svk.Context, mesh: Mesh) {
-	svk.destroy_buffer(ctx, mesh.vertex_buffer)
-	svk.destroy_buffer(ctx, mesh.index_buffer)
+destroy_mesh_buffers :: proc(temp_ctx: svk.Context, mesh: Mesh) {
+	// TODO: no idle?
+	svk.destroy_buffer(temp_ctx, mesh.vertex_buffer)
+	svk.destroy_buffer(temp_ctx, mesh.index_buffer)
 }
 
 @(private = "file")
 create_mesh_buffers :: proc(
-	ctx: svk.Context,
+	temp_ctx: svk.Context,
 	vertices: []Vertex,
 	indices: [][3]u32,
 ) -> (
 	mesh: Mesh,
 ) {
 	mesh.vertex_buffer = svk.create_buffer(
-		ctx,
+		temp_ctx,
 		size_of(Vertex),
 		cast(u32)len(vertices),
 		{.VERTEX_BUFFER},
@@ -134,15 +134,15 @@ create_mesh_buffers :: proc(
 	)
 
 	mesh.index_buffer = svk.create_buffer(
-		ctx,
+		temp_ctx,
 		size_of([3]u32),
 		cast(u32)len(indices),
 		{.INDEX_BUFFER},
 		{.DEVICE_LOCAL, .HOST_COHERENT},
 	)
 
-	svk.copy_to_buffer(ctx, &mesh.vertex_buffer, raw_data(vertices))
-	svk.copy_to_buffer(ctx, &mesh.index_buffer, raw_data(indices))
+	svk.copy_to_buffer(temp_ctx, &mesh.vertex_buffer, raw_data(vertices))
+	svk.copy_to_buffer(temp_ctx, &mesh.index_buffer, raw_data(indices))
 
 	return mesh
 }
@@ -192,3 +192,4 @@ generate_height_map :: proc(
 
 	return height_map
 }
+

@@ -2,7 +2,6 @@
 
 layout(location = 0) in float height;
 layout(location = 1) in vec3 normal;
-layout(location = 2) in vec3 mesh_color;
 
 layout(location = 0) out vec4 output_color;
 
@@ -16,17 +15,15 @@ float lighting(vec3 normal, vec3 view_dir);
 
 void main() {
     vec3 color;
-    if (height <= 0.5) {
+    if (height <= 0.0) {
         color = vec3(0.0, 0.2, 0.8);
-    } else if (height <= 1.5) {
+    } else if (height <= 1.0) {
         color = vec3(0.0, 0.8, 0.4);
     } else if (height <= 1.75) {
         color = vec3(0.6, 0.7, 0.2);
     } else {
         color = vec3(1.0, 1.0, 1.0);
     }
-
-    color = mesh_color;
 
     float intensity = lighting(normal, camera.direction);
     output_color = vec4(intensity * color, 1.0);

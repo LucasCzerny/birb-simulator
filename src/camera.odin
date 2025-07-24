@@ -15,6 +15,7 @@ Camera :: struct {
 create_camera :: proc(ctx: svk.Context) -> (camera: Camera) {
 	camera.view = 1
 	camera.projection = calculate_projection_matrix(ctx)
+	camera.position = {120, 20, 120}
 
 	return camera
 }
@@ -103,5 +104,6 @@ update_camera :: proc(ctx: svk.Context, matrices: ^Camera, delta_time: f32) -> b
 
 calculate_projection_matrix :: proc(ctx: svk.Context) -> matrix[4, 4]f32 {
 	aspect_ratio := f32(ctx.window.width) / f32(ctx.window.height)
-	return linalg.matrix4_perspective_f32(math.to_radians(f32(70)), aspect_ratio, 0.1, 1000)
+	return linalg.matrix4_perspective_f32(math.to_radians(f32(90)), aspect_ratio, 0.1, 1000)
 }
+

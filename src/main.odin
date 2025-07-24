@@ -1,7 +1,6 @@
 package birb
 
 import "core:log"
-import "core:math"
 import "core:mem"
 import "core:thread"
 
@@ -47,8 +46,8 @@ main :: proc() {
 		camera             = create_camera(ctx),
 		camera_descriptors = create_camera_descriptors(ctx),
 		camera_buffers     = create_camera_buffers(ctx),
-		ctx                = &ctx,
 		center_coords      = {0, 0},
+		is_running         = true,
 	}
 
 	for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
@@ -65,32 +64,53 @@ main :: proc() {
 	data.pipeline = create_pipeline(ctx, data)
 	context.user_ptr = &data
 
-	data._first_frame = true
-	invoke_chunks_thread()
-	data._first_frame = false
+	chunks_data := Chunk_Thread_Data {
+		temp_ctx = svk.Context{device = ctx.device, physical_device = ctx.physical_device},
+		first_frame = true,
+	}
+
+	chunks_thread := thread.create_and_start_with_data(&chunks_data, chunks_worker, context)
+	defer thread.destroy(chunks_thread)
 
 	for !glfw.WindowShouldClose(ctx.window.handle) {
 		svk.wait_until_frame_is_done(ctx, draw_ctx)
 		delta_time := svk.delta_time()
 
+		if chunks_data.copy_meshes {
+			chunks_data.copy_meshes = false
+
+			if !chunks_data.first_frame {
+				data.waiting_for_deletion[chunks_data.free_slot_deletion] = {
+					countdown           = 2,
+					initialized         = true,
+					meshes              = data.meshes,
+					pregenerated_meshes = chunks_data.pregenerated_meshes,
+				}
+
+				chunks_data.free_slot_deletion += 1
+				chunks_data.free_slot_deletion %= MAX_FRAMES_IN_FLIGHT
+			}
+
+			data.meshes = chunks_data.meshes
+		}
+
+		for &old_chunks in data.waiting_for_deletion {
+			if !old_chunks.initialized {continue}
+			old_chunks.countdown -= 1
+
+			if old_chunks.countdown <= 0 {
+				old_chunks.initialized = false
+				old_chunks.countdown = 0
+				destroy_old_chunks(chunks_data.temp_ctx, &old_chunks)
+			}
+		}
+
 		changed := update_camera(ctx, &data.camera, delta_time)
+
 		if changed {
 			for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
 				svk.copy_to_buffer(ctx, &data.camera_buffers[i], &data.camera)
 			}
-		}
-
-		center_coords := [2]int {
-			cast(int)math.floor(data.camera.position.x / 240.0),
-			cast(int)math.floor(data.camera.position.z / 240.0),
-		}
-
-		if center_coords != data.center_coords {
-			log.info("starting with", center_coords)
-			data._prev_center_coords = data.center_coords
-			data.center_coords = center_coords
-
-			invoke_chunks_thread()
 		}
 
 		svk.draw(&ctx, &draw_ctx, &data.pipeline)
@@ -98,6 +118,8 @@ main :: proc() {
 		glfw.SwapBuffers(ctx.window.handle)
 		glfw.PollEvents()
 	}
+
+	data.is_running = false
 
 	vk.DeviceWaitIdle(ctx.device)
 	svk.destroy_graphics_pipeline(ctx, data.pipeline)
@@ -109,7 +131,7 @@ main :: proc() {
 		}
 	}
 
-	for &row in data.pregenerated_meshes {
+	for &row in chunks_data.pregenerated_meshes {
 		for &mesh in row {
 			destroy_mesh_buffers(ctx, mesh)
 		}
@@ -124,8 +146,23 @@ main :: proc() {
 	svk.destroy_draw_context(ctx, draw_ctx)
 }
 
-invoke_chunks_thread :: proc() {
-	thread.create_and_start(update_chunks_worker, context, .Normal, true)
+destroy_old_chunks :: proc(ctx: svk.Context, old_chunks: ^Old_Chunks) {
+	log.info("deleting around", old_chunks.meshes[1][1].chunk_coords)
+
+	for y in 0 ..< N {
+		for x in 0 ..< N {
+			prev_mesh := &old_chunks.meshes[y][x]
+			pregenerated_mesh := &old_chunks.pregenerated_meshes[y][x]
+
+			if !prev_mesh._was_copied {
+				destroy_mesh_buffers(ctx, prev_mesh^)
+			}
+
+			if !pregenerated_mesh._was_copied {
+				destroy_mesh_buffers(ctx, pregenerated_mesh^)
+			}
+		}
+	}
 }
 
 create_context :: proc() -> svk.Context {
@@ -175,3 +212,4 @@ create_context :: proc() -> svk.Context {
 		descriptor_config,
 	)
 }
+

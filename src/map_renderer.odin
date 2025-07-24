@@ -5,18 +5,23 @@ import vk "vendor:vulkan"
 import "shared:svk"
 
 Render_Data :: struct {
-	pipeline:            svk.Pipeline,
-	camera:              Camera,
-	camera_buffers:      [MAX_FRAMES_IN_FLIGHT]svk.Buffer,
-	camera_descriptors:  svk.Descriptor_Group,
+	pipeline:             svk.Pipeline,
+	camera:               Camera,
+	camera_buffers:       [MAX_FRAMES_IN_FLIGHT]svk.Buffer,
+	camera_descriptors:   svk.Descriptor_Group,
 	//
-	ctx:                 ^svk.Context,
+	is_running:           bool,
+	//
+	meshes:               [N][N]Mesh,
+	center_coords:        [2]int,
+	waiting_for_deletion: [MAX_FRAMES_IN_FLIGHT]Old_Chunks,
+}
+
+Old_Chunks :: struct {
+	countdown:           int,
+	initialized:         bool,
 	meshes:              [N][N]Mesh,
 	pregenerated_meshes: [N][N]Mesh,
-	center_coords:       [2]int,
-	//
-	_first_frame:        bool,
-	_prev_center_coords: [2]int,
 }
 
 create_pipeline :: proc(ctx: svk.Context, data: Render_Data) -> svk.Pipeline {
@@ -25,7 +30,7 @@ create_pipeline :: proc(ctx: svk.Context, data: Render_Data) -> svk.Pipeline {
 	push_constant_range := vk.PushConstantRange {
 		stageFlags = {.VERTEX},
 		offset     = 0,
-		size       = 3 * size_of(f32),
+		size       = 2 * size_of(f32),
 	}
 
 	layout_info := vk.PipelineLayoutCreateInfo {
@@ -175,10 +180,9 @@ record_map_rendering :: proc(
 				continue
 			}
 
-			offsets_and_lod := [3]f32 {
+			mesh_offset := [2]f32 {
 				cast(f32)mesh.chunk_coords.x * 240,
 				cast(f32)mesh.chunk_coords.y * 240,
-				cast(f32)mesh.lod,
 			}
 
 			vk.CmdPushConstants(
@@ -186,8 +190,8 @@ record_map_rendering :: proc(
 				pipeline.layout,
 				{.VERTEX},
 				0,
-				3 * size_of(f32),
-				raw_data(offsets_and_lod[:]),
+				size_of([2]f32),
+				raw_data(mesh_offset[:]),
 			)
 
 			vk.CmdBindVertexBuffers(command_buffer, 0, 1, &mesh.vertex_buffer.handle, &offset)
@@ -197,3 +201,4 @@ record_map_rendering :: proc(
 		}
 	}
 }
+

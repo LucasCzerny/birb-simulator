@@ -15,6 +15,7 @@ Buffer :: struct {
 	mapped:        bool,
 }
 
+// TODO: use device instead of the entire context?
 create_buffer :: proc(
 	ctx: Context,
 	instance_size: vk.DeviceSize,
