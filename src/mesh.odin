@@ -2,6 +2,7 @@ package birb
 
 import "core:log"
 
+// import "core:math"
 import "core:math/linalg"
 import "core:math/noise"
 
@@ -32,6 +33,13 @@ generate_chunk_mesh :: proc(temp_ctx: svk.Context, lod: u32, chunk_coords: [2]in
 	// last loop iteration doesn't generate a triangle -> size of mesh is CHUNK_SIZE
 	width, height: u32 = CHUNK_SIZE + 1, CHUNK_SIZE + 1
 
+	min_height, max_height := calculate_min_max_height(
+		zoom = 500,
+		octaves = 5,
+		persistance = 0.4,
+		lacunarity = 2.2,
+	)
+
 	height_map := generate_height_map(
 		width,
 		height,
@@ -41,7 +49,9 @@ generate_chunk_mesh :: proc(temp_ctx: svk.Context, lod: u32, chunk_coords: [2]in
 		octaves = 5,
 		persistance = 0.4,
 		lacunarity = 2.2,
-		height_multiplier = 50,
+		min_height = min_height,
+		max_height = max_height,
+		height_multiplier = 100,
 	)
 
 	defer delete(height_map)
@@ -148,6 +158,39 @@ create_mesh_buffers :: proc(
 }
 
 @(private = "file")
+calculate_min_max_height :: proc(
+	zoom: f32,
+	octaves: u32,
+	persistance, lacunarity: f32,
+) -> (
+	f32,
+	f32,
+) {
+	log.assert(zoom > 0, "Zoom must be positive")
+	log.assert(0 <= persistance && persistance <= 1, "Persistance has to be in [0, 1]")
+
+	// copied from generate_height_map with fixed perlin values
+	amplitude: f32 = 1
+	frequency: f32 = 1
+
+	min_noise_height: f32 = 0
+	max_noise_height: f32 = 0
+
+	for _ in 0 ..< octaves {
+		min_perlin :: -1
+		max_perlin :: 1
+
+		min_noise_height += min_perlin * amplitude
+		max_noise_height += max_perlin * amplitude
+
+		amplitude *= persistance
+		frequency *= lacunarity
+	}
+
+	return min_noise_height, max_noise_height
+}
+
+@(private = "file")
 generate_height_map :: proc(
 	width, height: u32,
 	seed: i64,
@@ -155,6 +198,7 @@ generate_height_map :: proc(
 	zoom: f32,
 	octaves: u32,
 	persistance, lacunarity: f32,
+	min_height, max_height: f32,
 	height_multiplier: f32,
 ) -> [][]f32 {
 	log.assert(width > 1 && height > 1, "Height map must be at least 1x1")
@@ -186,7 +230,8 @@ generate_height_map :: proc(
 				frequency *= lacunarity
 			}
 
-			value = height_multiplier * noise_height
+			value = (noise_height - min_height) / (max_height - min_height)
+			value *= height_multiplier
 		}
 	}
 

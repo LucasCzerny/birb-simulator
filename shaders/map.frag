@@ -15,14 +15,14 @@ float lighting(vec3 normal, vec3 view_dir);
 
 void main() {
     vec3 color;
-    if (height <= 0.0) {
-        color = vec3(0.0, 0.2, 0.8);
-    } else if (height <= 1.0) {
-        color = vec3(0.0, 0.8, 0.4);
-    } else if (height <= 1.75) {
-        color = vec3(0.6, 0.7, 0.2);
+    if (height <= 10.0) {
+        color = vec3(0.0, 0.2, 0.8); // Water
+    } else if (height <= 25.0) {
+        color = vec3(0.0, 0.8, 0.4); // Grass
+    } else if (height <= 35.0) {
+        color = vec3(0.6, 0.7, 0.2); // Hill
     } else {
-        color = vec3(1.0, 1.0, 1.0);
+        color = vec3(1.0, 1.0, 1.0); // Mountain
     }
 
     float intensity = lighting(normal, camera.direction);
