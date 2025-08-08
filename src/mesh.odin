@@ -2,14 +2,18 @@ package birb
 
 import "core:log"
 
-// import "core:math"
+import "core:math"
 import "core:math/linalg"
 import "core:math/noise"
 
 import "shared:svk"
 
 CHUNK_SIZE: u32 : 240 // divisible by 1, 2, 4, 6, 8, 10, 12 :)
-HEIGHT_SCALE :: 2
+
+CHUNK_SCALE :: 5
+REAL_CHUNK_SIZE :: CHUNK_SIZE * CHUNK_SCALE
+
+HEIGHT_SCALE: f32 : 1000
 
 Mesh :: struct {
 	chunk_coords:  [2]int,
@@ -65,9 +69,11 @@ generate_chunk_mesh :: proc(temp_ctx: svk.Context, lod: u32, chunk_coords: [2]in
 
 	for y: u32 = 0; y < height; y += lod {
 		for x: u32 = 0; x < width; x += lod {
-			vertex_height := height_map[y][x] * HEIGHT_SCALE
+			vertex_height := height_map[y][x]
 
-			vertices[current_vertex].position = [3]f32{f32(x), vertex_height, f32(y)}
+			scaled_x := f32(x) * CHUNK_SCALE
+			scaled_y := f32(y) * CHUNK_SCALE
+			vertices[current_vertex].position = [3]f32{scaled_x, vertex_height, scaled_y}
 
 			if x < width - 1 && y < height - 1 {
 				// a *--* b
@@ -223,7 +229,7 @@ generate_height_map :: proc(
 				sample_y := f32(y - int(center_y) + offset.y) * frequency
 				sample := [2]f64{f64(sample_x) / f64(zoom), f64(sample_y) / f64(zoom)}
 
-				perlin := noise.noise_2d(seed, sample)
+				perlin := math.pow(noise.noise_2d(seed, sample), 5)
 				noise_height += perlin * amplitude
 
 				amplitude *= persistance
@@ -231,10 +237,15 @@ generate_height_map :: proc(
 			}
 
 			value = (noise_height - min_height) / (max_height - min_height)
-			value *= height_multiplier
+			value = value * 2 - 1
+
+			if value > 0 {
+				value *= HEIGHT_SCALE
+			} else {
+				value *= HEIGHT_SCALE / 2
+			}
 		}
 	}
 
 	return height_map
 }
-

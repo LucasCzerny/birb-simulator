@@ -105,12 +105,11 @@ main :: proc() {
 			}
 		}
 
-		changed := update_camera(ctx, &data.camera, delta_time)
+		update_camera(ctx, &data.camera, delta_time, data.loaded)
 
-		if changed {
-			for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
-				svk.copy_to_buffer(ctx, &data.camera_buffers[i], &data.camera)
-			}
+		for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
+			if !data.loaded {continue}
+			svk.copy_to_buffer(ctx, &data.camera_buffers[i], &data.camera)
 		}
 
 		svk.draw(&ctx, &draw_ctx, &data.pipeline)
@@ -212,4 +211,3 @@ create_context :: proc() -> svk.Context {
 		descriptor_config,
 	)
 }
-

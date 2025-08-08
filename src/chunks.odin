@@ -30,8 +30,8 @@ chunks_worker :: proc(init_data_ptr: rawptr) {
 
 	for render_data.is_running {
 		center_coords := [2]int {
-			cast(int)math.floor(render_data.camera.position.x / 240.0),
-			cast(int)math.floor(render_data.camera.position.z / 240.0),
+			cast(int)math.floor(render_data.camera.position.x / cast(f32)REAL_CHUNK_SIZE),
+			cast(int)math.floor(render_data.camera.position.z / cast(f32)REAL_CHUNK_SIZE),
 		}
 
 		if center_coords != chunks_data.prev_center_coords || chunks_data.first_frame {
@@ -42,7 +42,9 @@ chunks_worker :: proc(init_data_ptr: rawptr) {
 		}
 
 		chunks_data.prev_center_coords = center_coords
+
 		chunks_data.first_frame = false
+		render_data.loaded = true
 	}
 }
 
@@ -55,7 +57,11 @@ update_current_chunks :: proc(chunks_data: ^Chunk_Thread_Data, render_data: ^Ren
 		for x in 0 ..< N {
 			offset := [2]int{x, y} - VIEW_DISTANCE
 			max_offset := max(abs(offset.x), abs(offset.y))
-			lod := levels_of_detail[max_offset]
+
+			// highest lod for the center chunks and the surrounding chunks
+			// then it decreases for each layer
+			lod_index := max(max_offset - 1, 0)
+			lod := levels_of_detail[lod_index]
 
 			prev_index := [2]int{x, y} + center_offset
 			new_mesh := &chunks_data.meshes[y][x]
@@ -121,4 +127,3 @@ generate_future_chunks :: proc(chunks_data: ^Chunk_Thread_Data, render_data: ^Re
 		}
 	}
 }
-

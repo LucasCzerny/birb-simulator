@@ -10,6 +10,7 @@ Render_Data :: struct {
 	camera_buffers:       [MAX_FRAMES_IN_FLIGHT]svk.Buffer,
 	camera_descriptors:   svk.Descriptor_Group,
 	//
+	loaded:               bool,
 	is_running:           bool,
 	//
 	meshes:               [N][N]Mesh,
@@ -181,8 +182,8 @@ record_map_rendering :: proc(
 			}
 
 			mesh_offset := [2]f32 {
-				cast(f32)mesh.chunk_coords.x * 240,
-				cast(f32)mesh.chunk_coords.y * 240,
+				cast(f32)mesh.chunk_coords.x * cast(f32)REAL_CHUNK_SIZE,
+				cast(f32)mesh.chunk_coords.y * cast(f32)REAL_CHUNK_SIZE,
 			}
 
 			vk.CmdPushConstants(
@@ -201,4 +202,3 @@ record_map_rendering :: proc(
 		}
 	}
 }
-
