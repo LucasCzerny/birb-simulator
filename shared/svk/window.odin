@@ -2,59 +2,49 @@ package svk
 
 import "core:log"
 
-import "vendor:glfw"
+import sdl "vendor:sdl3"
 import vk "vendor:vulkan"
 
 Window_Config :: struct {
-	window_title:   cstring,
-	initial_width:  i32,
-	initial_height: i32,
-	resizable:      bool,
-	fullscreen:     bool,
+	window_title:     cstring,
+	initial_width:    i32,
+	initial_height:   i32,
+	resizable:        bool,
+	fullscreen:       bool,
+	sdl_init_flags:   sdl.InitFlags,
+	sdl_window_flags: sdl.WindowFlags,
 }
 
 Window :: struct {
-	handle:       glfw.WindowHandle,
-	surface:      vk.SurfaceKHR,
-	width:        u32,
-	height:       u32,
-	just_resized: bool,
+	handle:  ^sdl.Window,
+	surface: vk.SurfaceKHR,
+	width:   i32,
+	height:  i32,
 }
 
 create_window :: proc(window: ^Window, config: Window_Config, instance: vk.Instance) {
-	assert(!config.fullscreen, "Fullscreen is not implemented yet")
-
-	glfw.WindowHint(glfw.CLIENT_API, glfw.NO_API)
-	glfw.WindowHint(glfw.RESIZABLE, cast(b32)config.resizable)
-
-	window.handle = glfw.CreateWindow(
-		config.initial_width,
-		config.initial_height,
-		config.window_title,
-		nil,
-		nil,
-	)
-
-	window.width = cast(u32)config.initial_width
-	window.height = cast(u32)config.initial_height
-
-	result := glfw.CreateWindowSurface(instance, window.handle, nil, &window.surface)
-	if result != .SUCCESS {
-		log.panic("Failed to create the window surface")
+	window_flags: sdl.WindowFlags = {.VULKAN} + config.sdl_window_flags
+	if config.fullscreen {
+		window_flags += {.FULLSCREEN}
 	}
 
-	glfw.SetFramebufferSizeCallback(window.handle, cast(glfw.FramebufferSizeProc)set_window_size)
+	window.handle = sdl.CreateWindow(
+		config.window_title,
+		config.initial_width,
+		config.initial_height,
+		window_flags,
+	)
+	log.ensure(window.handle != nil, "Failed to create the SDL3 window")
+
+	window.width = config.initial_width
+	window.height = config.initial_height
+
+	surface_ok := sdl.Vulkan_CreateSurface(window.handle, instance, nil, &window.surface)
+	log.ensure(surface_ok, "Failed to create the SDL3 surface")
 }
 
 destroy_window :: proc(ctx: Context, window: Window) {
-	vk.DestroySurfaceKHR(ctx.instance, window.surface, nil)
-}
-
-@(private = "file")
-set_window_size :: proc "c" (handle: glfw.WindowHandle, width: i32, height: i32) {
-	window := cast(^Window)glfw.GetWindowUserPointer(handle)
-
-	window.width = cast(u32)width
-	window.height = cast(u32)height
+	sdl.DestroyWindow(window.handle)
+	sdl.Vulkan_DestroySurface(ctx.instance, window.surface, nil)
 }
 

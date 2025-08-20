@@ -469,13 +469,7 @@ load_material :: proc(
 	material.descriptor = create_descriptor_set(ctx, bindings)
 
 	for sampler, i in material.samplers {
-		image_info := vk.DescriptorImageInfo {
-			sampler     = sampler,
-			imageView   = material.textures[i].view,
-			imageLayout = material.textures[i].layout,
-		}
-
-		update_descriptor_set(ctx, material.descriptor, image_info, cast(u32)i)
+		update_descriptor_set(ctx, material.descriptor, sampler, material.textures[i], cast(u32)i)
 	}
 
 	return

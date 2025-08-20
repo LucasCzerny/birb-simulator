@@ -92,13 +92,18 @@ update_descriptor_set_buffer :: proc(
 update_descriptor_set_image :: proc(
 	ctx: Context,
 	descriptor_set: Descriptor_Set,
-	image_info: vk.DescriptorImageInfo,
+	sampler: vk.Sampler,
+	image: Image,
 	binding: u32,
 	array_element: u32 = 0,
 	descriptor_type: vk.DescriptorType = .COMBINED_IMAGE_SAMPLER,
 	p_next: rawptr = nil,
 ) {
-	image_info := image_info
+	image_info := vk.DescriptorImageInfo {
+		sampler     = sampler,
+		imageView   = image.view,
+		imageLayout = image.layout,
+	}
 
 	write_descriptor := vk.WriteDescriptorSet {
 		sType           = .WRITE_DESCRIPTOR_SET,
@@ -113,3 +118,4 @@ update_descriptor_set_image :: proc(
 
 	vk.UpdateDescriptorSets(ctx.device, 1, &write_descriptor, 0, nil)
 }
+

@@ -175,12 +175,14 @@ create_image :: proc(
 }
 
 copy_to_image :: proc(ctx: Context, img: Image, pixels: rawptr, loc := #caller_location) {
-	log.infof("Make sure you added .TRANSFER_DST to the image usage (at: %v)", loc)
+	log.debugf("Make sure you added .TRANSFER_DST to the image usage (at: %v)", loc)
+
+	bytes_per_channel := img.depth / 8
 
 	staging_buffer := create_buffer(
 		ctx,
 		1,
-		img.width * img.height * img.channels,
+		img.width * img.height * img.channels * bytes_per_channel,
 		{.TRANSFER_SRC},
 		{.HOST_VISIBLE, .HOST_COHERENT},
 	)
@@ -274,17 +276,25 @@ transition_image :: proc(
 // TODO: ugh
 @(private = "file")
 determine_format :: proc(channels, depth: u32, srgb: bool) -> vk.Format {
-	log.assert(
+	log.ensure(
 		channels == 4,
-		"Most GPUs only really support images with 4 channels (so does (for now?))",
+		"Most GPUs only really support images with 4 channels (so does svk (for now?))",
 	)
 
-	log.assert(depth == 8, "Tbh don't feel like implementing this shit rn")
+	switch depth {
+	case 8:
+		format_int := cast(i32)vk.Format.R8G8B8A8_UNORM
+		if srgb do format_int += 6
+		return cast(vk.Format)format_int
+	// TODO: unorm or sfloat
+	case 16:
+		return .R16G16B16A16_SFLOAT
+	case 32:
+		return .R32G32B32A32_SFLOAT
+	}
 
-	format_int := cast(i32)vk.Format.R8G8B8A8_UNORM
-	if srgb do format_int += 6
-
-	return cast(vk.Format)format_int
+	log.ensure(false, "The image depth (bits per pixel) must be 8, 16 or 32")
+	return .UNDEFINED
 }
 
 @(private = "file")

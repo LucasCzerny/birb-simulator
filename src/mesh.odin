@@ -51,8 +51,8 @@ generate_chunk_mesh :: proc(temp_ctx: svk.Context, lod: u32, chunk_coords: [2]in
 		offset = cast(int)CHUNK_SIZE * chunk_coords,
 		zoom = 500,
 		octaves = 5,
-		persistance = 0.4,
-		lacunarity = 2.2,
+		persistance = 0.25,
+		lacunarity = 3.0,
 		min_height = min_height,
 		max_height = max_height,
 		height_multiplier = 100,
@@ -249,3 +249,4 @@ generate_height_map :: proc(
 
 	return height_map
 }
+

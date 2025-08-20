@@ -2,11 +2,12 @@ package birb
 
 import "core:log"
 import "core:mem"
+import "core:slice"
 import "core:thread"
 
 import "shared:svk"
 
-import "vendor:glfw"
+import sdl "vendor:sdl3"
 import vk "vendor:vulkan"
 
 MAX_FRAMES_IN_FLIGHT :: 2
@@ -15,6 +16,7 @@ main :: proc() {
 	when ODIN_DEBUG {
 		context.logger = log.create_console_logger(
 			opt = {.Level, .Short_File_Path, .Line, .Procedure, .Terminal_Color},
+			lowest = .Info,
 		)
 		defer log.destroy_console_logger(context.logger)
 	}
@@ -43,23 +45,34 @@ main :: proc() {
 	draw_ctx := svk.create_draw_context(ctx, MAX_FRAMES_IN_FLIGHT)
 
 	data := Render_Data {
-		camera             = create_camera(ctx),
-		camera_descriptors = create_camera_descriptors(ctx),
-		camera_buffers     = create_camera_buffers(ctx),
-		center_coords      = {0, 0},
-		is_running         = true,
+		camera          = create_camera(ctx),
+		camera_buffers  = create_camera_buffers(ctx),
+		center_coords   = {0, 0},
+		is_running      = true,
+		albedo_textures = [NR_LAYERS]svk.Image {
+			svk.load_image(ctx, "textures/water_albedo.png", true),
+			svk.load_image(ctx, "textures/sand_albedo.png", true),
+			svk.load_image(ctx, "textures/grass_albedo.png", true),
+			svk.load_image(ctx, "textures/rock_albedo.png", true),
+			svk.load_image(ctx, "textures/snow_albedo.png", true),
+		},
+		normal_textures = [NR_LAYERS]svk.Image {
+			svk.load_image(ctx, "textures/water_normal.png", false),
+			svk.load_image(ctx, "textures/sand_normal.png", false),
+			svk.load_image(ctx, "textures/grass_normal.png", false),
+			svk.load_image(ctx, "textures/rock_normal.png", false),
+			svk.load_image(ctx, "textures/snow_normal.png", false),
+		},
+		sampler         = svk.create_basic_ahh_sampler(ctx),
 	}
 
-	for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
-		svk.update_descriptor_set(
-			ctx,
-			svk.get_set(data.camera_descriptors, i),
-			data.camera_buffers[i],
-			0,
-		)
-
-		svk.map_buffer(ctx, &data.camera_buffers[i])
-	}
+	data.camera_descriptors = create_camera_descriptors(ctx, &data.camera_buffers)
+	data.textures_descriptor = create_texture_descriptor(
+		ctx,
+		data.sampler,
+		&data.albedo_textures,
+		&data.normal_textures,
+	)
 
 	data.pipeline = create_pipeline(ctx, data)
 	context.user_ptr = &data
@@ -72,11 +85,28 @@ main :: proc() {
 	chunks_thread := thread.create_and_start_with_data(&chunks_data, chunks_worker, context)
 	defer thread.destroy(chunks_thread)
 
-	for !glfw.WindowShouldClose(ctx.window.handle) {
+	center_buffer: ^svk.Buffer
+
+	for data.is_running {
+		event: sdl.Event
+		for sdl.PollEvent(&event) {
+			#partial switch (event.type) {
+			case .QUIT:
+				data.is_running = false
+			case .WINDOW_RESIZED:
+				ctx.window.width = event.window.data1
+				ctx.window.height = event.window.data2
+			}
+		}
+
 		svk.wait_until_frame_is_done(ctx, draw_ctx)
 		delta_time := svk.delta_time()
 
 		if chunks_data.copy_meshes {
+			if center_buffer != nil {
+				svk.unmap_buffer(ctx, center_buffer)
+			}
+
 			chunks_data.copy_meshes = false
 
 			if !chunks_data.first_frame {
@@ -92,6 +122,10 @@ main :: proc() {
 			}
 
 			data.meshes = chunks_data.meshes
+
+			center_buffer = &data.meshes[N / 2][N / 2].vertex_buffer
+
+			svk.map_buffer(ctx, center_buffer)
 		}
 
 		for &old_chunks in data.waiting_for_deletion {
@@ -105,20 +139,37 @@ main :: proc() {
 			}
 		}
 
-		update_camera(ctx, &data.camera, delta_time, data.loaded)
+		if center_buffer != nil {
+			vertices := slice.from_ptr(
+				cast(^Vertex)center_buffer.mapped_memory,
+				int((CHUNK_SIZE + 1) * (CHUNK_SIZE + 1)),
+			)
 
-		for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
-			if !data.loaded {continue}
-			svk.copy_to_buffer(ctx, &data.camera_buffers[i], &data.camera)
+			u32_position := [2]u32{u32(data.camera.position.x), u32(data.camera.position.y)}
+			offset := u32_position % REAL_CHUNK_SIZE
+
+			y_index := offset.y / CHUNK_SCALE
+			x_index := offset.x / CHUNK_SCALE
+
+			terrain_height := vertices[y_index * (CHUNK_SIZE + 1) + x_index].position.y
+			player_height := data.camera.position.y
+
+			if player_height - terrain_height <= 0 {
+				log.error("you crashed dumbass")
+			}
 		}
 
 		svk.draw(&ctx, &draw_ctx, &data.pipeline)
 
-		glfw.SwapBuffers(ctx.window.handle)
-		glfw.PollEvents()
+		update_camera(ctx, &data.camera, delta_time, center_buffer != nil)
+
+		for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
+			if center_buffer == nil {continue}
+			svk.copy_to_buffer(ctx, &data.camera_buffers[i], &data.camera)
+		}
 	}
 
-	data.is_running = false
+	thread.join(chunks_thread)
 
 	vk.DeviceWaitIdle(ctx.device)
 	svk.destroy_graphics_pipeline(ctx, data.pipeline)
@@ -141,23 +192,29 @@ main :: proc() {
 		svk.destroy_buffer(ctx, data.camera_buffers[i])
 	}
 
-	svk.destroy_context(ctx)
+	for i in 0 ..< NR_LAYERS {
+		svk.destroy_image(ctx, data.albedo_textures[i])
+		svk.destroy_image(ctx, data.normal_textures[i])
+	}
+
+	vk.DestroySampler(ctx.device, data.sampler, nil)
+	svk.destroy_descriptor_layout(ctx, data.textures_descriptor)
+
 	svk.destroy_draw_context(ctx, draw_ctx)
+	svk.destroy_context(ctx)
 }
 
 destroy_old_chunks :: proc(ctx: svk.Context, old_chunks: ^Old_Chunks) {
-	log.info("deleting around", old_chunks.meshes[1][1].chunk_coords)
-
 	for y in 0 ..< N {
 		for x in 0 ..< N {
 			prev_mesh := &old_chunks.meshes[y][x]
 			pregenerated_mesh := &old_chunks.pregenerated_meshes[y][x]
 
-			if !prev_mesh._was_copied {
+			if !prev_mesh._was_copied && prev_mesh.vertex_buffer != {} {
 				destroy_mesh_buffers(ctx, prev_mesh^)
 			}
 
-			if !pregenerated_mesh._was_copied {
+			if !pregenerated_mesh._was_copied && pregenerated_mesh.vertex_buffer != {} {
 				destroy_mesh_buffers(ctx, pregenerated_mesh^)
 			}
 		}
@@ -179,7 +236,7 @@ create_context :: proc() -> svk.Context {
 		initial_width  = 1280,
 		initial_height = 720,
 		resizable      = true,
-		fullscreen     = false,
+		fullscreen     = true,
 	}
 
 	device_config := svk.Device_Config {
@@ -190,7 +247,7 @@ create_context :: proc() -> svk.Context {
 	swapchain_config :: svk.Swapchain_Config {
 		format       = .B8G8R8A8_SRGB,
 		color_space  = .COLORSPACE_SRGB_NONLINEAR,
-		present_mode = .MAILBOX,
+		present_mode = .FIFO,
 	}
 
 	commands_config :: svk.Commands_Config {
@@ -198,8 +255,9 @@ create_context :: proc() -> svk.Context {
 	}
 
 	descriptor_config :: svk.Descriptor_Config {
-		max_sets          = MAX_FRAMES_IN_FLIGHT,
-		nr_uniform_buffer = MAX_FRAMES_IN_FLIGHT,
+		max_sets                  = 2 + MAX_FRAMES_IN_FLIGHT,
+		nr_uniform_buffer         = MAX_FRAMES_IN_FLIGHT,
+		nr_combined_image_sampler = 2,
 	}
 
 	return svk.create_context(
@@ -211,3 +269,4 @@ create_context :: proc() -> svk.Context {
 		descriptor_config,
 	)
 }
+

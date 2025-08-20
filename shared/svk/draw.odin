@@ -171,7 +171,7 @@ draw :: proc(ctx: ^Context, draw_ctx: ^Draw_Context, pipelines: ..^Pipeline) {
 
 	result = vk.QueuePresentKHR(ctx.graphics_queue.handle, &present_info)
 
-	if result == .SUBOPTIMAL_KHR {
+	if result == .ERROR_OUT_OF_DATE_KHR || result == .SUBOPTIMAL_KHR {
 		update_swapchain_capabilities(ctx)
 		recreate_swapchain(ctx^, &ctx.swapchain)
 
@@ -337,3 +337,4 @@ submit_command_buffer :: proc(
 		log.panicf("Failed to submit the command buffer (result: %v)", result)
 	}
 }
+

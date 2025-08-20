@@ -1,13 +1,10 @@
 package birb
 
-import "core:log"
 import "core:math"
-
-_ :: log
 
 import "shared:svk"
 
-VIEW_DISTANCE :: 2
+VIEW_DISTANCE :: 4
 CHUNKS_PER_ROW :: 1 + 2 * VIEW_DISTANCE // also per column cuz thats how squares work
 N :: CHUNKS_PER_ROW
 
@@ -36,7 +33,9 @@ chunks_worker :: proc(init_data_ptr: rawptr) {
 
 		if center_coords != chunks_data.prev_center_coords || chunks_data.first_frame {
 			render_data.center_coords = center_coords
+
 			update_current_chunks(chunks_data, render_data)
+			chunks_data.copy_meshes = true
 
 			generate_future_chunks(chunks_data, render_data)
 		}
@@ -44,7 +43,6 @@ chunks_worker :: proc(init_data_ptr: rawptr) {
 		chunks_data.prev_center_coords = center_coords
 
 		chunks_data.first_frame = false
-		render_data.loaded = true
 	}
 }
 
@@ -58,9 +56,9 @@ update_current_chunks :: proc(chunks_data: ^Chunk_Thread_Data, render_data: ^Ren
 			offset := [2]int{x, y} - VIEW_DISTANCE
 			max_offset := max(abs(offset.x), abs(offset.y))
 
-			// highest lod for the center chunks and the surrounding chunks
+			// highest lod for the center chunks and the 2 surrounding layers
 			// then it decreases for each layer
-			lod_index := max(max_offset - 1, 0)
+			lod_index := max(max_offset - 2, 0)
 			lod := levels_of_detail[lod_index]
 
 			prev_index := [2]int{x, y} + center_offset
@@ -97,14 +95,21 @@ update_current_chunks :: proc(chunks_data: ^Chunk_Thread_Data, render_data: ^Ren
 			}
 		}
 	}
-
-	chunks_data.copy_meshes = true
 }
 
 generate_future_chunks :: proc(chunks_data: ^Chunk_Thread_Data, render_data: ^Render_Data) {
+	direction := render_data.camera.direction
+	move_direction := [2]int{cast(int)math.sign(direction.x), cast(int)math.sign(direction.y)}
+
 	for y in 0 ..< N {
 		for x in 0 ..< N {
 			offset := [2]int{x, y} - VIEW_DISTANCE
+
+			if move_direction.x == -offset.x || move_direction.y == -offset.y {
+				chunks_data.pregenerated_meshes[y][x] = {}
+				continue
+			}
+
 			mesh := &chunks_data.meshes[y][x]
 
 			pregenerated_lod: u32
@@ -127,3 +132,4 @@ generate_future_chunks :: proc(chunks_data: ^Chunk_Thread_Data, render_data: ^Re
 		}
 	}
 }
+

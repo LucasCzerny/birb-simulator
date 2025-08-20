@@ -215,7 +215,7 @@ choose_present_mode :: proc(
 
 @(private = "file")
 choose_extent :: proc(window: Window, capabilities: vk.SurfaceCapabilitiesKHR) -> vk.Extent2D {
-	extent := vk.Extent2D{window.width, window.height}
+	extent := vk.Extent2D{u32(window.width), u32(window.height)}
 
 	extent.width = math.clamp(
 		extent.width,

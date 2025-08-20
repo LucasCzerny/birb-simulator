@@ -2,18 +2,18 @@ package svk
 
 import "core:log"
 
-import "vendor:glfw"
+import sdl "vendor:sdl3"
 import vk "vendor:vulkan"
 
 delta_time :: proc() -> f32 {
-	@(static) prev_time: f32 = 0
+	@(static) prev: u64 = 0
 
-	time := cast(f32)glfw.GetTime()
-	delta := time - prev_time
+	now := sdl.GetPerformanceCounter()
 
-	prev_time = time
+	delta_ms := f64(now - prev) / f64(sdl.GetPerformanceFrequency())
+	prev = now
 
-	return delta
+	return cast(f32)delta_ms
 }
 
 align_size :: proc(size, alignment: vk.DeviceSize) -> vk.DeviceSize {
@@ -69,5 +69,40 @@ find_memory_type_index :: proc(
 	}
 
 	log.panic("Failed to find a supported memory type")
+}
+
+create_basic_ahh_sampler :: proc(
+	ctx: Context,
+	anisotropy_enable := true,
+) -> (
+	sampler: vk.Sampler,
+) {
+	properties: vk.PhysicalDeviceProperties
+
+	if anisotropy_enable {
+		vk.GetPhysicalDeviceProperties(ctx.physical_device, &properties)
+	}
+
+	sampler_info := vk.SamplerCreateInfo {
+		sType                   = .SAMPLER_CREATE_INFO,
+		magFilter               = .LINEAR,
+		minFilter               = .LINEAR,
+		mipmapMode              = .NEAREST,
+		addressModeU            = .CLAMP_TO_EDGE,
+		addressModeV            = .CLAMP_TO_EDGE,
+		addressModeW            = .CLAMP_TO_EDGE,
+		mipLodBias              = 0,
+		anisotropyEnable        = cast(b32)anisotropy_enable,
+		maxAnisotropy           = anisotropy_enable ? properties.limits.maxSamplerAnisotropy : 1.0,
+		compareEnable           = false,
+		compareOp               = .NEVER,
+		borderColor             = .INT_OPAQUE_BLACK,
+		unnormalizedCoordinates = false,
+	}
+
+	result := vk.CreateSampler(ctx.device, &sampler_info, nil, &sampler)
+	log.ensure(result == .SUCCESS, "Failed to create the basic ahh sampler")
+
+	return sampler
 }
 

@@ -2,7 +2,7 @@ package svk
 
 import "core:log"
 
-import "vendor:glfw"
+import sdl "vendor:sdl3"
 import vk "vendor:vulkan"
 
 Instance_Config :: struct {
@@ -26,17 +26,20 @@ create_instance :: proc(instance: ^vk.Instance, config: Instance_Config, context
 		apiVersion         = vk.API_VERSION_1_3,
 	}
 
-	glfw_extensions: []cstring = glfw.GetRequiredInstanceExtensions()
+	sdl_extension_count: u32
+	sdl_extensions_ptr := sdl.Vulkan_GetInstanceExtensions(&sdl_extension_count)
 
-	log.assert(len(glfw_extensions) != 0, "No GLFW extensions were found")
+	sdl_extensions := sdl_extensions_ptr[:sdl_extension_count]
+
+	log.assert(sdl_extension_count != 0, "No GLFW extensions were found")
 
 	extensions: [dynamic]cstring
 	defer delete(extensions)
 
-	reserve(&extensions, len(config.extensions) + len(glfw_extensions))
+	reserve(&extensions, len(config.extensions) + len(sdl_extensions))
 
 	append(&extensions, ..config.extensions)
-	append(&extensions, ..glfw_extensions)
+	append(&extensions, ..sdl_extensions)
 
 	create_info := vk.InstanceCreateInfo {
 		sType                   = .INSTANCE_CREATE_INFO,
@@ -68,3 +71,4 @@ create_instance :: proc(instance: ^vk.Instance, config: Instance_Config, context
 		log.panicf("Failed to create the instance (result: %v)", result)
 	}
 }
+

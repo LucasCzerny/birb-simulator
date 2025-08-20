@@ -5,11 +5,10 @@ import subprocess
 project_name = os.path.basename(os.getcwd())
 parser = argparse.ArgumentParser(description=f"Build {project_name}")
 
-parser = argparse.ArgumentParser(description="Build Odin project")
-
 parser.add_argument("--debug", action="store_true", help="Do a debug build")
 parser.add_argument("--run", action="store_true", help="Run the program after building")
-parser.add_argument("--pre-build", default="", metavar="<path_to_script>", help="Path to a pre-build script (make sure it's executable)")
+parser.add_argument("--very-strict", action="store_true", help="Use very strict vetting. The main difference to the default vetting is that unused variables, imports, ... will error")
+parser.add_argument("--pre-build", default="", metavar="<path_to_script>", help="Path to a pre-build script (make it executable with chmod +x)")
 
 args = parser.parse_args()
 
@@ -39,12 +38,22 @@ command = [
     "run" if args.run else "build",
     "src",
     f"-out=build/{project_name}",
-    "-vet",
-    "-strict-style",
+    "-strict-style"
 ]
 
 if args.debug:
     command.append("-debug")
+
+if args.very_strict:
+    command.append("-vet")
+else:
+    command.append("-vet-cast")
+    command.append("-vet-semicolon")
+    command.append("-vet-shadowing")
+    command.append("-vet-style")
+    command.append("-vet-tabs")
+    command.append("-vet-using-param")
+    command.append("-vet-using-stmt")
 
 has_shared_collection = os.path.isdir("shared")
 if has_shared_collection:

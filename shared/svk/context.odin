@@ -3,7 +3,7 @@ package svk
 import "base:runtime"
 import "core:log"
 
-import "vendor:glfw"
+import sdl "vendor:sdl3"
 import vk "vendor:vulkan"
 
 Context :: struct {
@@ -41,10 +41,13 @@ create_context :: proc(
 ) -> Context {
 	ctx: Context
 
-	if !glfw.Init() {
-		log.panic("Failed to initialize glfw")
-	}
-	init_vulkan()
+	init_ok := sdl.Init({.VIDEO} + window_config.sdl_init_flags)
+	log.ensure(init_ok, "Failed to initialize SDL3")
+
+	ok := sdl.Vulkan_LoadLibrary(nil)
+	log.ensure(ok, "Failed to load the vulkan library")
+
+	vk.load_proc_addresses_global(cast(rawptr)sdl.Vulkan_GetVkGetInstanceProcAddr())
 
 	if instance_config.enable_validation_layers {
 		ctx._messenger_context_copy = new(runtime.Context)
@@ -52,6 +55,8 @@ create_context :: proc(
 	}
 
 	create_instance(&ctx.instance, instance_config, cast(rawptr)ctx._messenger_context_copy)
+
+	vk.load_proc_addresses_instance(ctx.instance)
 
 	if instance_config.enable_validation_layers {
 		ctx._has_debug_messenger = true
@@ -63,7 +68,6 @@ create_context :: proc(
 	}
 
 	create_window(&ctx.window, window_config, ctx.instance)
-	glfw.SetWindowUserPointer(ctx.window.handle, cast(rawptr)&ctx.window)
 
 	create_devices_and_queues(&ctx, device_config, ctx.instance, ctx.window.surface)
 	ctx.anisotropy_enabled = cast(bool)device_config.features.samplerAnisotropy
@@ -97,7 +101,7 @@ destroy_context :: proc(ctx: Context) {
 
 	vk.DestroyInstance(ctx.instance, nil)
 
-	glfw.Terminate()
+	sdl.Quit()
 }
 
 update_swapchain_capabilities :: proc(ctx: ^Context) {
@@ -110,17 +114,5 @@ update_swapchain_capabilities :: proc(ctx: ^Context) {
 	if result != .SUCCESS {
 		log.panicf("Failed to get the physical device surface capabilities (result: %v)")
 	}
-}
-
-@(private = "file")
-init_vulkan :: proc() {
-	instance: vk.Instance
-	context.user_ptr = &instance
-
-	get_proc_address :: proc(p: rawptr, name: cstring) {
-		(cast(^rawptr)p)^ = glfw.GetInstanceProcAddress((^vk.Instance)(context.user_ptr)^, name)
-	}
-
-	vk.load_proc_addresses(get_proc_address)
 }
 
